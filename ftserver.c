@@ -25,9 +25,9 @@
 
 struct addrinfo * make_addr_info(char * portno);
 struct addrinfo * make_addr_ip_info(char * ip_addr, char * port);
-int create_socket(struct addrinfo * res);
-void connect_socket(int sockfd, struct addrinfo * res);
-void bind_socket(int sockfd, struct addrinfo * res);
+int make_socket(struct addrinfo * res);
+void make_connection(int sockfd, struct addrinfo * res);
+void make_bind(int sockfd, struct addrinfo * res);
 void listen_socket(int sockfd);
 char ** make_str_arr(int size);
 void remove_str_arr(char ** array, int size);
@@ -61,17 +61,19 @@ void waiting(int sockfd);
 *****************************************************/
 
 int main(int argc, char *argv[]) {
+	// first check arguments
 	if(argc != 2){
 		fprintf(stderr, "Error: wrong number of arguments\n");
 		exit(1);
 	}
-	printf("Message: Server opened on port number %s\n", argv[1]);
-	struct addrinfo * response = make_addr_info(argv[1]);
-	int sockfd = create_socket(response);
-	bind_socket(sockfd, response);
+	// if no
+	struct addrinfo * results = make_addr_info(argv[1]);
+	int sockfd = make_socket(results);
+	make_bind(sockfd, results);
 	listen_socket(sockfd);
+	printf("Message: Server opened on port number %s\n", argv[1]);
 	waiting(sockfd);
-	freeaddrinfo(response);
+	freeaddrinfo(results);
 }
 
 
@@ -79,25 +81,27 @@ int main(int argc, char *argv[]) {
 * struct addrinfo * make_addr_info(char*)
 * make pointer to addr info linked list with port 
 * Takes 1 string: port num 
-* Response: addr info linked list 
+* Response: addr info linked list
+* source: http://beej.us/guide/bgnet/output/html/singlepage/bgnet.html#getaddrinfo 
 *********************************************************************/
 struct addrinfo * make_addr_info(char * portno) {
-	struct addrinfo * response;
+	
+	struct addrinfo * results;
 	struct addrinfo hints;
 	int state;
-
 	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_INET;
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
 
-	state = getaddrinfo(NULL, portno, &hints, &response);
-	
+	state = getaddrinfo(NULL, portno, &hints, &results);
+
+	// if you've received a non zero return, print error message
 	if(state != 0) {
 		fprintf(stderr, "ERROR: check port number", gai_strerror(state));
 		exit(1);
 	}
-	return response;
+	return results;
 }
 
 /********************************************************************
@@ -108,20 +112,20 @@ struct addrinfo * make_addr_info(char * portno) {
 *********************************************************************/
 struct addrinfo * make_addr_ip_info(char * ip_addr, char * portno) {
 	struct addrinfo hints;
-	struct addrinfo * response;
+	struct addrinfo * results; // service info list
 	int state;
 
 	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_INET;
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 
-	state = getaddrinfo(ip_addr, portno, &hints, &response);
+	state = getaddrinfo(ip_addr, portno, &hints, &results);
 	
 	if( state != 0) {
 		fprintf(stderr, "Error: %s \nDid you enter the right IP address and port combination?\n", gai_strerror(state));
 		exit(1);
 	}
-	return response;
+	return results;
 }
 
 /********************************************************************
@@ -130,9 +134,9 @@ struct addrinfo * make_addr_ip_info(char * ip_addr, char * portno) {
 * Takes linked list 
 * Response: socket file description
 *********************************************************************/
-int create_socket(struct addrinfo * response) {
+int make_socket(struct addrinfo * results) {
 	int sockfd;
-	sockfd = socket((struct addrinfo * )(response)->ai_family, response->ai_socktype, response->ai_protocol);
+	sockfd = socket((struct addrinfo * )(results)->ai_family, results->ai_socktype, results->ai_protocol);
 	if(sockfd == -1) {
 		fprintf(stderr, "Error: unable to create socket\n");
 		exit(1);
@@ -146,16 +150,13 @@ int create_socket(struct addrinfo * response) {
 * connects socket to linked list address info 
 * takes a socket file descrptor and linked list of address info
 *********************************************************************/
-void connect_socket(int sockfd, struct addrinfo * response){
+void make_connection(int sockfd, struct addrinfo * results){
 	int state;
-	
-	state = connect(sockfd, response -> ai_addr, response->ai_addrlen); 
-	
+	state = connect(sockfd, results -> ai_addr, results->ai_addrlen); 
 	if(state == -1) {
 		fprintf(stderr, "Error: unable to connect socket\n");
 		exit(1);
 	}
-
 }
 
 /********************************************************************
@@ -163,9 +164,8 @@ void connect_socket(int sockfd, struct addrinfo * response){
 * binds port with socket
 * takes socket file descriptor and linked list of address info
 *********************************************************************/
-void bind_socket(int sockfd, struct addrinfo * response){
-	
-	if(bind(sockfd, response->ai_addr, response->ai_addrlen) == -1) {
+void make_bind(int sockfd, struct addrinfo * results){
+	if(bind(sockfd, results->ai_addr, results->ai_addrlen)== -1) {
 		close(sockfd);
 		fprintf(stderr, "Error: unable to bind socket\n");
 		exit(1);
@@ -269,9 +269,9 @@ int check_exists(char ** files, int num_files, char * filename){
 *********************************************************************/
 void send_fi(char * ip_address, char * portno, char * filename){
 	sleep(2);
-	struct addrinfo * response = make_addr_ip_info(ip_address, portno);
-	int data_socket = create_socket(response);
-	connect_socket(data_socket, response);
+	struct addrinfo * results = make_addr_ip_info(ip_address, portno);
+	int data_socket = make_socket(results);
+	make_connection(data_socket, results);
 	char buffer[1000];
 	memset(buffer, 0, sizeof(buffer));
 	int fd = open(filename, O_RDONLY);
@@ -301,7 +301,7 @@ void send_fi(char * ip_address, char * portno, char * filename){
 	strcpy(buffer, "__done__");
 	send(data_socket, buffer, sizeof(buffer),0);
 	close(data_socket);
-	freeaddrinfo(response);
+	freeaddrinfo(results);
 }
 
 /********************************************************************
@@ -312,9 +312,9 @@ void send_fi(char * ip_address, char * portno, char * filename){
 *********************************************************************/
 void send_dir(char * ip_address, char * portno, char ** files, int num_files){
 	sleep(2);
-	struct addrinfo * response = make_addr_ip_info(ip_address, portno);
-	int data_socket = create_socket(response);
-	connect_socket(data_socket, response);
+	struct addrinfo * results = make_addr_ip_info(ip_address, portno);
+	int data_socket = make_socket(results);
+	make_connection(data_socket, results);
 	int i;
 	for(i=0; i<num_files; i++) {
 		send(data_socket, files[i], 100, 0);
@@ -322,7 +322,7 @@ void send_dir(char * ip_address, char * portno, char ** files, int num_files){
 	char * done_message = "done";
 	send(data_socket, done_message, strlen(done_message), 0);
 	close(data_socket);
-	freeaddrinfo(response);
+	freeaddrinfo(results);
 }
 
 /********************************************************************
@@ -392,12 +392,12 @@ void handle_req(int new_fd){
 
 *********************************************************************/
 void waiting(int sockfd){
-	struct sockaddr_storage client_addr;
+	struct sockaddr_storage their_addr;
 	socklen_t addr_size;
 	int new_fd;
 	while(1) {
-		addr_size = sizeof(client_addr);
-		new_fd = accept(sockfd, (struct addrinfo *) &client_addr, &addr_size);
+		addr_size = sizeof(their_addr);
+		new_fd = accept(sockfd, (struct addrinfo *) &their_addr, &addr_size);
 		if(new_fd == -1) {
 			continue;
 		}
