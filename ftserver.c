@@ -332,15 +332,18 @@ void send_dir(char * ip_address, char * portno, char ** files, int num_files){
 *
 *********************************************************************/
 void handle_req(int new_fd){
+
 	char * success_msg = "ok";
 	char * failure_msg = "nope";
+	
 	char portno[100];
 	memset(portno, 0, sizeof(portno));
 	recv(new_fd, portno, sizeof(portno)-1, 0);
+	send(new_fd, success_msg, strlen(success_msg),0);
 	char command[100];
 	memset(command, 0, sizeof(command));
 	recv(new_fd, command, sizeof(command)-1, 0);
-	send(new_fd, success_msg, strlen(success_msg) -1, 0);
+	send(new_fd, success_msg, strlen(success_msg), 0);
 	char ip_address[100];
 	memset(ip_address,0,sizeof(ip_address));
 	recv(new_fd, ip_address, sizeof(ip_address) -1, 0);
