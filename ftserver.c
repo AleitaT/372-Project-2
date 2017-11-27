@@ -29,13 +29,13 @@ int make_socket(struct addrinfo * res);
 void make_connection(int sockfd, struct addrinfo * res);
 void make_bind(int sockfd, struct addrinfo * res);
 void listen_socket(int sockfd);
-char ** make_str_arr(int size);
-void remove_str_arr(char ** array, int size);
 int get_files(char ** files);
+char ** get_file_array(int size);
+void remove_file_array(char ** array, int size);
 int check_exists(char ** files, int num_files, char * filename);
 void send_fi(char * ip_address, char * port, char * filename);
 void send_dir(char * ip_address, char * port, char ** files, int num_files);
-void handle_req(int new_fd);
+void client_req(int new_fd);
 void waiting(int sockfd);
 
 // initiates a TCP data connection with ftclient on <DATA_PORT>. (Call this connection Q)
@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
 	int sockfd = make_socket(results);
 	make_bind(sockfd, results);
 	listen_socket(sockfd);
-	printf("Message: Server opened on port number %s\n", argv[1]);
+	printf("Message: Server open on port %s\n", argv[1]);
 	waiting(sockfd);
 	freeaddrinfo(results);
 }
@@ -175,9 +175,9 @@ void make_bind(int sockfd, struct addrinfo * results){
 
 /********************************************************************
 * void listen_socket(int)
-
 * listen on the port
-* takes socket file descriptor
+* takes socket file descriptor (sockfd)
+* https://www.systutorials.com/docs/linux/man/2-listen/
 *********************************************************************/
 void listen_socket(int sockfd){
 	if(listen(sockfd, 5) == -1) {
@@ -188,12 +188,36 @@ void listen_socket(int sockfd){
 }
 
 /********************************************************************
-* char ** make_str_arr(int)
+* int get_files(char **)
+* count files in dir and put in string
+* takes string array 
+* http://www.geeksforgeeks.org/c-program-list-files-sub-directories-directory/
+*********************************************************************/
+int get_files(char ** files){
+
+	struct dirent * dir;
+	DIR * fileDir = opendir(".");
+	int i = 0;
+
+	if(fileDir) { 
+		while((dir = readdir(fileDir)) != NULL) {
+			if (dir -> d_type == DT_REG) {
+				strcpy(files[i], dir->d_name);
+				i++;
+			}
+		}
+		closedir(fileDir);
+	}
+	return i;
+}
+
+/********************************************************************
+* char ** get_file_array(int)
 *
 * make string aray on the heap for files in dir
 * takes integer number (of files) 
 *********************************************************************/
-char ** make_str_arr(int size){
+char ** get_file_array(int size){
 	
 	char ** arr = malloc(size*sizeof(char *));
 	int i;
@@ -206,42 +230,17 @@ char ** make_str_arr(int size){
 }
 
 /********************************************************************
-* void remove_str_arr(char ** , int)
-* 
+* void remove_file_array(char ** , int)
+* basic helper function to clear heap array
 * removes the string array on the heap 
 * takes string array and how many files it contained
 *********************************************************************/
-void remove_str_arr(char ** arr, int size){
-	
+void remove_file_array(char ** arr, int size){
 	int i; 
-
 	for(i = 0; i < size; i++){
 		free(arr[i]);
 	}
 	free(arr);
-}
-
-/********************************************************************
-* int get_files(char **)
-* 
-* count files in dir and put in string
-* takes string array 
-*********************************************************************/
-int get_files(char ** files){
-	DIR * fileDir;
-	struct dirent * dir;
-	fileDir = opendir(".");
-	int i = 0;
-	if(fileDir) { 
-		while((dir = readdir(fileDir)) != NULL) {
-			if (dir -> d_type == DT_REG) {
-				strcpy(files[i], dir->d_name);
-				i++;
-			}
-		}
-		closedir(fileDir);
-	}
-	return i;
 }
 
 /********************************************************************
@@ -266,17 +265,20 @@ int check_exists(char ** files, int num_files, char * filename){
 * 
 * send file on socket to set ip + port no 
 * takes ip, port and filename  
+* https://stackoverflow.com/questions/2014033/send-and-receive-a-file-in-socket-programming-in-linux-with-c-c-gcc-g
 *********************************************************************/
 void send_fi(char * ip_address, char * portno, char * filename){
+
 	sleep(2);
+	
 	struct addrinfo * results = make_addr_ip_info(ip_address, portno);
 	int data_socket = make_socket(results);
 	make_connection(data_socket, results);
 	char buffer[1000];
 	memset(buffer, 0, sizeof(buffer));
 	int fd = open(filename, O_RDONLY);
-	while (1) {
 
+	while (1) {
 		int bytes_read = read(fd, buffer, sizeof(buffer) -1);
 		if (bytes_read == 0) {
 			break;
@@ -306,70 +308,74 @@ void send_fi(char * ip_address, char * portno, char * filename){
 
 /********************************************************************
 * void send_dir(char *, char *, char **, int)
-* 
-* send directory contents to the client 
-* takes ip, port, num of files, 
+* send list of files in directory  to the client 
+* takes ip, port, list of files, num of files, 
 *********************************************************************/
-void send_dir(char * ip_address, char * portno, char ** files, int num_files){
+void send_dir(char * ip_address, char * portno, char ** file_list, int file_count){
+	
 	sleep(2);
+	char * done_message = "done";
+	int i = 0;
 	struct addrinfo * results = make_addr_ip_info(ip_address, portno);
 	int data_socket = make_socket(results);
 	make_connection(data_socket, results);
-	int i;
-	for(i=0; i<num_files; i++) {
-		send(data_socket, files[i], 100, 0);
+	
+	for(i; i<file_count; i++) {
+		send(data_socket, file_list[i], 100, 0);
 	}
-	char * done_message = "done";
+
 	send(data_socket, done_message, strlen(done_message), 0);
 	close(data_socket);
 	freeaddrinfo(results);
 }
 
 /********************************************************************
-* void handle_req(int)
-
-*  
-*
+* void client_req(int)
+* proceses requests from client 
+* takes the socket we created earlier
+* http://beej.us/guide/bgnet/output/html/multipage/clientserver.html 
 *********************************************************************/
-void handle_req(int new_fd){
-
+void client_req(int new_fd){
+ 
+	 // prep some messages 
 	char * success_msg = "ok";
 	char * failure_msg = "nope";
-	
+	char * unfound_msg = "File not found";
+	char * found_msg = "File found";
+
 	char portno[100];
+	char command[100];
+	char ip_address[100];
+
 	memset(portno, 0, sizeof(portno));
 	recv(new_fd, portno, sizeof(portno)-1, 0);
 	send(new_fd, success_msg, strlen(success_msg),0);
-	char command[100];
+
 	memset(command, 0, sizeof(command));
 	recv(new_fd, command, sizeof(command)-1, 0);
 	send(new_fd, success_msg, strlen(success_msg), 0);
-	char ip_address[100];
+
 	memset(ip_address,0,sizeof(ip_address));
 	recv(new_fd, ip_address, sizeof(ip_address) -1, 0);
-	printf("Connection coming in from %s\n", ip_address);
-	if(strcmp(command, "l") == 0) {
-		send(new_fd, success_msg, strlen(success_msg), 0);
-		printf("Last requested on port %s\n", portno);
-		printf("Sending file list to %s on port number %s\n", ip_address, portno);
-		char ** files = make_str_arr(100);
-		int num_files = get_files(files);
-		send_dir(ip_address, portno, files, num_files);
-		remove_str_arr(files, 100);
-	}
-	else if(strcmp(command, "g") == 0) {
+	printf("Connection coming in from %s\n", ip_address);	
+	
+	/* case for file transfer */
+	if (strcmp(command, "g") == 0) {
 		send(new_fd, success_msg, strlen(success_msg), 0);
 		char filename[100];
+	
 		memset(filename, 0, sizeof(filename));
 		recv(new_fd, filename, sizeof(filename) -1, 0);
-		printf("Msg: file: %s requested on port number %s\n", filename, portno);
-		char ** files = make_str_arr(100);
-		int num_files = get_files(files);
-		int exists = check_exists(files, num_files, filename);
-		if(exists) { 
-			printf("Info: file found, sneidng %s to client \n", filename);
-			char * file_found = "File found";
-			send(new_fd, file_found, strlen(file_found), 0);
+		printf("Info: %s requested on port number %s\n", filename, portno);
+	
+		char ** file_list = get_file_array(100);
+		int file_count  = get_files(file_list);
+		int contains_file = check_exists(file_list, file_count, filename);
+	
+	/* if exists, proceed */
+		if (contains_file) { 
+			printf("Info: Sending %s to client on port %s \n", filename, portno);
+			send(new_fd, found_msg, strlen(found_msg), 0);
 			char new_filename[100];
 			memset(new_filename, 0, sizeof(new_filename));
 			strcpy(new_filename, "./");
@@ -377,34 +383,54 @@ void handle_req(int new_fd){
 			end += sprintf(end, "%s", filename);
 			send_fi(ip_address, portno, new_filename);
 		}
+		/* if doesn't pass check for contains */ 
 		else {
-			printf("Info: file not found, sending error message to client\n");
-			char * file_not_found = "File not found";
-			send(new_fd, file_not_found, 100, 0);
+			printf("Info: file %s not found, sending error message to client\n", filename);
+			send(new_fd, unfound_msg, 100, 0);
 		}
-		remove_str_arr(files, 100);
+		remove_file_array(file_list, 100);
 	}
+
+	/* handle request for file list */
+  else if (strcmp(command, "l") == 0) {
+		send(new_fd, success_msg, strlen(success_msg), 0);
+		printf("Info: List directory requested on port %s\n", portno);
+		printf("Info: Sending directory contents to %s on port number %s\n", ip_address, portno);
+		char ** file_list = get_file_array(100);
+		int num_files = get_files(file_list);
+		send_dir(ip_address, portno, file_list, num_files);
+		remove_file_array(file_list, 100);
+	}
+
+	/* I wanted to put this at the top of the loop to make it return error before runing other checks 
+	 * but I found it diffiult to get my circuit working in the correct order, this simple dead end route 
+	 * was easiest to keep it running to receive connections.  */
 	else {
 		send(new_fd, failure_msg, strlen(failure_msg), 0);
-		printf("Info: invalid command\n");
+		printf("Usage: Please see readme for usage. (invalid command)d\n");
 	}
-	printf("Still waiting for incoming connections \n");
+	printf("Info: Still waiting for incoming connections \n");
 }
 
 /********************************************************************
-
+* waiting(int) 
+* accepts a file socket descriptor 
+* waits for incoming connections 
+* calls to client request when new requests are received
+* http://beej.us/net2/html/clientserver.html
 *********************************************************************/
-void waiting(int sockfd){
-	struct sockaddr_storage their_addr;
+void waiting(int sockfd){	
 	socklen_t addr_size;
 	int new_fd;
+	struct sockaddr_storage their_addr;
+	
 	while(1) {
 		addr_size = sizeof(their_addr);
 		new_fd = accept(sockfd, (struct addrinfo *) &their_addr, &addr_size);
 		if(new_fd == -1) {
 			continue;
 		}
-		handle_req(new_fd);
+		client_req(new_fd);
 		close(new_fd);
 	}
 }
