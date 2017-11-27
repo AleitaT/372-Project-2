@@ -29,14 +29,15 @@ int make_socket(struct addrinfo * res);
 void make_connection(int sockfd, struct addrinfo * res);
 void make_bind(int sockfd, struct addrinfo * res);
 void listen_socket(int sockfd);
+void send_dir(char * ip_address, char * port, char ** files, int num_files);
+void client_req(int new_fd);
+void waiting(int sockfd);
 int get_files(char ** files);
 char ** get_file_array(int size);
 void remove_file_array(char ** array, int size);
 int check_exists(char ** files, int num_files, char * filename);
 void send_fi(char * ip_address, char * port, char * filename);
-void send_dir(char * ip_address, char * port, char ** files, int num_files);
-void client_req(int new_fd);
-void waiting(int sockfd);
+
 
 // initiates a TCP data connection with ftclient on <DATA_PORT>. (Call this connection Q)
 // If ftclient has sent the -l command, ftserver sends its directory to ftclient on connection Q, and ftclient displays the directory on-screen.
@@ -187,124 +188,6 @@ void listen_socket(int sockfd){
 	}
 }
 
-/********************************************************************
-* int get_files(char **)
-* count files in dir and put in string
-* takes string array 
-* http://www.geeksforgeeks.org/c-program-list-files-sub-directories-directory/
-*********************************************************************/
-int get_files(char ** files){
-
-	struct dirent * dir;
-	DIR * fileDir = opendir(".");
-	int i = 0;
-
-	if(fileDir) { 
-		while((dir = readdir(fileDir)) != NULL) {
-			if (dir -> d_type == DT_REG) {
-				strcpy(files[i], dir->d_name);
-				i++;
-			}
-		}
-		closedir(fileDir);
-	}
-	return i;
-}
-
-/********************************************************************
-* char ** get_file_array(int)
-*
-* make string aray on the heap for files in dir
-* takes integer number (of files) 
-*********************************************************************/
-char ** get_file_array(int size){
-	
-	char ** arr = malloc(size*sizeof(char *));
-	int i;
-
-	for(i = 0; i< size; i ++) {
-		arr[i] = malloc(100*sizeof(char));
-		memset(arr[i], 0, sizeof(arr[i]));
-	}
-	return arr;
-}
-
-/********************************************************************
-* void remove_file_array(char ** , int)
-* basic helper function to clear heap array
-* removes the string array on the heap 
-* takes string array and how many files it contained
-*********************************************************************/
-void remove_file_array(char ** arr, int size){
-	int i; 
-	for(i = 0; i < size; i++){
-		free(arr[i]);
-	}
-	free(arr);
-}
-
-/********************************************************************
-* int check_exists(char **, int, char *)
-* 
-* check to see if the file exists in the array 
-* takes files array, filename, and num of files
-*********************************************************************/
-int check_exists(char ** files, int num_files, char * filename){
-	int i;
-	int exists = 0;
-	for(i=0; i<num_files; i++) {
-		if(strcmp(files[i], filename) == 0 ) {
-			exists = 1;
-		}
-	}
-	return exists;
-}
-
-/********************************************************************
-* void send_fi(char *, char *, char *)
-* 
-* send file on socket to set ip + port no 
-* takes ip, port and filename  
-* https://stackoverflow.com/questions/2014033/send-and-receive-a-file-in-socket-programming-in-linux-with-c-c-gcc-g
-*********************************************************************/
-void send_fi(char * ip_address, char * portno, char * filename){
-
-	sleep(2);
-	
-	struct addrinfo * results = make_addr_ip_info(ip_address, portno);
-	int data_socket = make_socket(results);
-	make_connection(data_socket, results);
-	char buffer[1000];
-	memset(buffer, 0, sizeof(buffer));
-	int fd = open(filename, O_RDONLY);
-
-	while (1) {
-		int bytes_read = read(fd, buffer, sizeof(buffer) -1);
-		if (bytes_read == 0) {
-			break;
-		}
-		if(bytes_read < 0) {
-			fprintf(stderr, "Error: unable to read file\n");
-			return;
-		}
-		void *p = buffer; 
-		while(bytes_read > 0) {
-			int bytes_written = send(data_socket, p, sizeof(buffer), 0);
-			if(bytes_written < 0){
-				fprintf(stderr, "Error: unable to write socket\n");
-				return;
-			}
-			bytes_read -= bytes_written;
-			p+= bytes_written;
-		}
-		memset(buffer, 0, sizeof(buffer));
-	}
-	memset(buffer, 0, sizeof(buffer));
-	strcpy(buffer, "__done__");
-	send(data_socket, buffer, sizeof(buffer),0);
-	close(data_socket);
-	freeaddrinfo(results);
-}
 
 /********************************************************************
 * void send_dir(char *, char *, char **, int)
@@ -435,3 +318,123 @@ void waiting(int sockfd){
 	}
 }
 
+
+
+/********************************************************************
+* int get_files(char **)
+* count files in dir and put in string
+* takes string array 
+* http://www.geeksforgeeks.org/c-program-list-files-sub-directories-directory/
+*********************************************************************/
+int get_files(char ** files){
+
+	struct dirent * dir;
+	DIR * fileDir = opendir(".");
+	int i = 0;
+
+	if(fileDir) { 
+		while((dir = readdir(fileDir)) != NULL) {
+			if (dir -> d_type == DT_REG) {
+				strcpy(files[i], dir->d_name);
+				i++;
+			}
+		}
+		closedir(fileDir);
+	}
+	return i;
+}
+
+/********************************************************************
+* char ** get_file_array(int)
+*
+* make string aray on the heap for files in dir
+* takes integer number (of files) 
+*********************************************************************/
+char ** get_file_array(int size){
+	
+	char ** arr = malloc(size*sizeof(char *));
+	int i;
+
+	for(i = 0; i< size; i ++) {
+		arr[i] = malloc(100*sizeof(char));
+		memset(arr[i], 0, sizeof(arr[i]));
+	}
+	return arr;
+}
+
+/********************************************************************
+* void remove_file_array(char ** , int)
+* basic helper function to clear heap array
+* removes the string array on the heap 
+* takes string array and how many files it contained
+*********************************************************************/
+void remove_file_array(char ** arr, int size){
+	int i; 
+	for(i = 0; i < size; i++){
+		free(arr[i]);
+	}
+	free(arr);
+}
+
+/********************************************************************
+* int check_exists(char **, int, char *)
+* 
+* check to see if the file exists in the array 
+* takes files array, filename, and num of files
+*********************************************************************/
+int check_exists(char ** files, int num_files, char * filename){
+	int i;
+	int exists = 0;
+	for(i=0; i<num_files; i++) {
+		if(strcmp(files[i], filename) == 0 ) {
+			exists = 1;
+		}
+	}
+	return exists;
+}
+
+/********************************************************************
+* void send_fi(char *, char *, char *)
+* 
+* send file on socket to set ip + port no 
+* takes ip, port and filename  
+* https://stackoverflow.com/questions/2014033/send-and-receive-a-file-in-socket-programming-in-linux-with-c-c-gcc-g
+*********************************************************************/
+void send_fi(char * ip_address, char * portno, char * filename){
+
+	sleep(2);
+	
+	struct addrinfo * results = make_addr_ip_info(ip_address, portno);
+	int data_socket = make_socket(results);
+	make_connection(data_socket, results);
+	char buffer[1000];
+	memset(buffer, 0, sizeof(buffer));
+	int fd = open(filename, O_RDONLY);
+
+	while (1) {
+		int bytes_read = read(fd, buffer, sizeof(buffer) -1);
+		if (bytes_read == 0) {
+			break;
+		}
+		if(bytes_read < 0) {
+			fprintf(stderr, "Error: unable to read file\n");
+			return;
+		}
+		void *p = buffer; 
+		while(bytes_read > 0) {
+			int bytes_written = send(data_socket, p, sizeof(buffer), 0);
+			if(bytes_written < 0){
+				fprintf(stderr, "Error: unable to write socket\n");
+				return;
+			}
+			bytes_read -= bytes_written;
+			p+= bytes_written;
+		}
+		memset(buffer, 0, sizeof(buffer));
+	}
+	memset(buffer, 0, sizeof(buffer));
+	strcpy(buffer, "__done__");
+	send(data_socket, buffer, sizeof(buffer),0);
+	close(data_socket);
+	freeaddrinfo(results);
+}

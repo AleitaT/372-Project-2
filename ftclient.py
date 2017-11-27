@@ -94,10 +94,10 @@ def self_ip():
 # https://docs.python.org/2/library/socket.html
 def exchange_requests(sock_c):
 	if sys.argv[3] == "-g":
-		print "Reqesting file {}".format(sys.argv[4])
+		print "Info: reqesting file {}".format(sys.argv[4])
 		portarg = 5
 	elif sys.argv[3] == "-l":
-		print "Requesting server file list"
+		print "Info: requesting server file list"
 		portarg = 4
 	sock_c.send(sys.argv[portarg])
 	sock_c.recv(1024)
@@ -109,13 +109,13 @@ def exchange_requests(sock_c):
 	sock_c.send(self_ip())
 	response = sock_c.recv(1024)
 	if response == "bad":
-		print "Server received a bad command"
+		print "Error: server received a bad command"
 		exit(1)
 	if sys.argv[3] == "-g":
 		sock_c.send(sys.argv[4])
 		response = sock_c.recv(1024)
 		if response != "File found":
-			print "Client responded with 'File not found message'"
+			print "Error: client response 'File not found message'"
 			return
 	sock_d = make_data_socket()
 	if sys.argv[3] == "-l":
